@@ -144,16 +144,24 @@ class SCPcardReportParser:
             print(e)
 
         page_data = []
+        vendors = []
 
         if content:
-            date_regex = re.compile('[0-9]{0,1}\/[0-9]{2}\/[0-9]{4}')
-            pagenum_label_and_agency_regex = re.compile(
-                f'Page [0-9].* of [0-9]*(.*)Vendor Name')
+            date_regex = re.compile('[0-9]{1,2}\/[0-9]{2}\/[0-9]{4}')
+            dollar_amount_regex = re.compile('(\$([0-9]+.?)+\.[0-9]?[0-9]?)')
+            # regex for pulling the vendor name before the date in one of the vda strings
+            # (get everything before the date pattern, where the date is the second part of the
+            # vda element)
+            vendor_exclusive_regex_without_cardholder = re.compile(
+                r'((.|\s)+?)(?=([0-9]{1,2}\/[0-9]{2}\/[0-9]{4}))')
+            vendor_exclusive_regex_with_cardholder = re.compile(
+                r'(Cardholder)((.|\s)+?)(?=([0-9]{1,2}\/[0-9]{2}\/[0-9]{4}))'
+            )
             pagenum = re.compile(r'Page [0-9].* of [0-9]*').findall(content)
             agency = re.compile(
                 r'Page [0-9].* of [0-9]*(.*)\s*.*Vendor Name').findall(content)
             vendor_date_amount = re.compile(
-                r'( [a-zA-Z0-9_ \&\#.\-\/\s]*(\s|.)([0-9]{2}\/[0-9]{2}\/[0-9]{4})(\$([0-9]+.?)+\.[0-9]?[0-9]?))'
+                r'( [a-zA-Z0-9_ \&\#.\-\/\s,]*(\s|.)([0-9]{2}\/[0-9]{2}\/[0-9]{4})(\$([0-9]+.?)+\.[0-9]?[0-9]?))'
             ).findall(content)
             if len(agency) > 0:
                 agency = agency[0]
@@ -167,15 +175,31 @@ class SCPcardReportParser:
                 print(vda)
                 try:
                     vda = vda[0]
+                    print(f'vda = {vda}')
+                    amount = dollar_amount_regex.findall(vda)[0][0]
+
+                    date = date_regex.findall(vda)[0]
                     if 'Cardholder' in vda:
-                        vendor = vda.split(
-                            'Cardholder')[-1].split('\n')[0].strip()
-                        amount = f'{vda.split("$")[-1]}'.strip()
-                        date = vda.split('\n')[-1].split('$')[0].strip()
+                        print(f'Cardholder in {vda}')
+                        vendor = vendor_exclusive_regex_with_cardholder.findall(
+                            vda)
+                        # vendor is second group (index 1) in this pattern
+                        vendor_index = 1
+                        for v in vendor:
+                            if v[1].strip() != '':
+                                vendor = v[1]
+                                break
                     else:
-                        vendor = vda.split('\n')[0].strip()
-                        date, amount = [el.strip()
-                                        for el in vda.split('\n')[-1].split('$')]
+                        vendor = vendor_exclusive_regex_without_cardholder.findall(
+                            vda)
+                        # vendor is first group (index 1) in this pattern
+                        vendor_index = 0
+                    for v in vendor:
+                        if v[vendor_index].strip() != '':
+                            vendor = v[vendor_index]
+                            break
+                    vendor = vendor.strip().replace('\n', '')
+                    print(f'vendor: {vendor}')
                 except Exception as e:
                     print(e)
                     print(f'vda = {vda}')
@@ -193,20 +217,36 @@ class SCPcardReportParser:
 
 
 def main():
-    parser = SCPcardReportParser()
-    data = parser.get_monthly_charge_card_usage_chart()
-    parser.save_json_data_to_json_file(
-        data=data, json_filename='pcard-usage-pdf-links.json')
-    jan_2022_pdf_link = parser.get_month_year_pdf_link(
-        month='January', year='2022')
-    text_files = parser.generate_text_files_from_pdf_url(
-        link=jan_2022_pdf_link)
-    all_page_data = {}
-    for i, f in enumerate(text_files):
-        page_data = parser.parse_page_text_file(f)
-        all_page_data[i] = page_data
-    with open('page_data.json', 'w') as f:
-        json.dump(all_page_data, f)
+    # parser = SCPcardReportParser()
+    # data = parser.get_monthly_charge_card_usage_chart()
+    # parser.save_json_data_to_json_file(
+    #     data=data, json_filename='data/pcard-usage-pdf-links.json')
+    # jan_2022_pdf_link = parser.get_month_year_pdf_link(
+    #     month='January', year='2022')
+    # text_files = parser.generate_text_files_from_pdf_url(
+    #     link=jan_2022_pdf_link)
+    # all_page_data = {}
+    # for i, f in enumerate(text_files):
+    #     page_data = parser.parse_page_text_file(f)
+    #     all_page_data[i] = page_data
+    # with open('data/page_data.json', 'w') as f:
+    #     json.dump(all_page_data, f)
+
+    # vendors = []
+    # for i, page_records_list in all_page_data.items():
+    #     for record in page_records_list:
+    #         vendors.append(record['vendor'])
+
+    # with open('data/vendors.json', 'w') as f:
+    #     json.dump(vendors, f)
+
+    with open('data/vendors.json', 'r') as f:
+        data = json.load(f)
+        vendors = []
+        for vendor in data:
+            vendors.append(vendor.split()[0])
+        with open('data/vendors2.json', 'w') as f2:
+            json.dump(vendors, f2)
 
 
 if __name__ == "__main__":
